@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT Anomaly Detection — Model Analysis Dashboard</title>
+    <meta name="description" content="Upload IoT sensor CSV and run multi-model anomaly detection with detailed charts and analytics.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary: #E85D04; --secondary: #9D4EDD;
+            --bg-primary: #FFF8F0; --bg-surface: #FFFFFF; --bg-card: #FFFFFF;
+            --text-primary: #1A1A1A; --text-secondary: #6B6B6B;
+            --border: #E0D5C7;
+            --success: #2D6A4F; --error: #D00000; --warning: #E85D04;
+            --accent-cyan: #0EA5E9; --accent-purple: #9D4EDD;
+            --accent-orange: #E85D04; --accent-green: #2D6A4F;
+            --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+            --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+            --sp-12: 48px; --sp-16: 64px;
+            --radius-sm: 4px; --radius-md: 12px; --radius-lg: 24px; --radius-full: 9999px;
+            --shadow-subtle: 0 2px 4px rgba(232, 93, 4, 0.08);
+            --shadow-medium: 0 4px 16px rgba(232, 93, 4, 0.12);
+        }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--bg-primary); color: var(--text-primary);
+            line-height: 1.6; overflow-x: hidden; font-size: 16px;
+            font-weight: 400;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 0 var(--sp-6); }
+
+        /* Hero */
+        .hero { text-align: center; padding: 64px var(--sp-6) 48px; }
+        .hero__badge {
+            display: inline-flex; align-items: center; gap: var(--sp-2);
+            padding: 6px 16px; border: 1px solid rgba(232, 93, 4, 0.25); border-radius: var(--radius-full);
+            font-size: 12px; font-weight: 600; color: var(--primary); letter-spacing: 1.5px;
+            background: rgba(232, 93, 4, 0.06);
+        }
+        .hero__badge::before {
+            content: ''; width: 6px; height: 6px; background: var(--primary);
+            border-radius: 50%; animation: pulse 2s infinite;
+        }
+        @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+        .hero h1 { font-size: clamp(2rem, 4.5vw, 48px); font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; margin: var(--sp-4) 0 var(--sp-3); color: var(--text-primary); }
+        .hero h1 span { background: linear-gradient(135deg, var(--primary), var(--secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .hero p { font-size: 17px; color: var(--text-secondary); max-width: 600px; margin: 0 auto; line-height: 1.7; }
+
+        /* Upload */
+        .upload-section { margin-bottom: var(--sp-12); }
+        .upload-zone {
+            border: 2px dashed var(--border); border-radius: var(--radius-lg);
+            padding: var(--sp-12) var(--sp-8); text-align: center; cursor: pointer;
+            transition: all 0.3s ease; background: var(--bg-surface); max-width: 680px; margin: 0 auto;
+            position: relative; overflow: hidden;
+        }
+        .upload-zone::before {
+            content: ''; position: absolute; inset: 0;
+            background: linear-gradient(135deg, rgba(232,93,4,0.04), rgba(157,78,221,0.04));
+            opacity: 0; transition: opacity 0.3s;
+        }
+        .upload-zone:hover, .upload-zone.drag-over { border-color: var(--primary); transform: scale(1.02); box-shadow: var(--shadow-medium); }
+        .upload-zone:hover::before, .upload-zone.drag-over::before { opacity: 1; }
+        .upload-zone__icon { font-size: 3rem; margin-bottom: var(--sp-3); position: relative; z-index: 1; }
+        .upload-zone__title { font-size: 20px; font-weight: 700; margin-bottom: var(--sp-1); position: relative; z-index: 1; color: var(--text-primary); }
+        .upload-zone__subtitle { font-size: 14px; color: var(--text-secondary); position: relative; z-index: 1; }
+        .upload-zone__subtitle span { color: var(--primary); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+        .upload-zone__hint { font-size: 12px; color: var(--text-secondary); margin-top: var(--sp-3); position: relative; z-index: 1; opacity: 0.7; }
+        .upload-zone input[type="file"] { display: none; }
+
+        /* Shared card / panel */
+        .panel {
+            background: var(--bg-surface); border: 1px solid var(--border);
+            border-radius: var(--radius-md); padding: var(--sp-6);
+            box-shadow: var(--shadow-subtle);
+            transition: box-shadow 0.3s ease, transform 0.3s ease;
+        }
+        .panel:hover {
+            box-shadow: var(--shadow-medium); transform: scale(1.02);
+        }
+        .panel-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-secondary); margin-bottom: var(--sp-4); }
+
+        /* Error & File Info */
+        .upload-error { display:none; background:rgba(208,0,0,0.06); border:1px solid rgba(208,0,0,0.2); border-radius:var(--radius-md); padding:var(--sp-4) var(--sp-6); margin-top:var(--sp-4); color:var(--error); font-size:14px; font-weight:500; max-width:680px; margin-left:auto; margin-right:auto; }
+        .upload-error.visible { display:block; }
+        .file-info { display:none; max-width:680px; margin:var(--sp-4) auto 0; }
+        .file-info.visible { display:block; }
+        .file-info__header { display:flex; align-items:center; justify-content:space-between; }
+        .file-info__name { font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:500; color:var(--primary); }
+        .file-info__meta { font-size:12px; color:var(--text-secondary); margin-top:2px; }
+        .file-info__remove { background:none; border:1px solid var(--error); color:var(--error); border-radius:var(--radius-full); padding:var(--sp-4) var(--sp-6); height:48px; font-size:12px; font-weight:600; cursor:pointer; transition:all 0.2s; }
+        .file-info__remove:hover { background:var(--error); color:#fff; transform: scale(1.02); }
+
+        /* Loading */
+        .loading-overlay { display:none; text-align:center; padding:var(--sp-16) 0; }
+        .loading-overlay.visible { display:block; }
+        .loading-spinner { width:48px; height:48px; border:3px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.7s linear infinite; margin:0 auto var(--sp-6); }
+        @keyframes spin { to { transform:rotate(360deg); } }
+        .loading-text { font-size:17px; font-weight:600; color:var(--text-primary); }
+        .loading-subtext { font-size:13px; color:var(--text-secondary); margin-top:var(--sp-2); }
+
+        /* Section headers */
+        .section-header { text-align:center; margin-bottom:var(--sp-8); }
+        .section-header__title { font-size:28px; font-weight:700; letter-spacing:-0.02em; margin-bottom:var(--sp-2); color:var(--text-primary); }
+        .section-header__subtitle { font-size:15px; color:var(--text-secondary); }
+        .section-divider { border:none; border-top:1px solid var(--border); margin:var(--sp-12) 0; }
+
+        /* Results Grid (model cards) */
+        .analysis-results { display:none; margin-top:var(--sp-10); }
+        .analysis-results.visible { display:block; }
+        .results-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:var(--sp-6); }
+        .result-card {
+            background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-md);
+            padding:var(--sp-6); position:relative; overflow:hidden;
+            animation:slideUp 0.5s ease forwards; opacity:0;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            box-shadow: var(--shadow-subtle);
+        }
+        .result-card:nth-child(1){animation-delay:.08s} .result-card:nth-child(2){animation-delay:.18s}
+        .result-card:nth-child(3){animation-delay:.28s} .result-card:nth-child(4){animation-delay:.38s}
+        @keyframes slideUp { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
+        .result-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; }
+        .result-card:hover { transform:translateY(-3px) scale(1.02); box-shadow:var(--shadow-medium); }
+        .result-card[data-accent="cyan"]::before { background:linear-gradient(90deg,var(--accent-cyan),transparent); }
+        .result-card[data-accent="purple"]::before { background:linear-gradient(90deg,var(--accent-purple),transparent); }
+        .result-card[data-accent="orange"]::before { background:linear-gradient(90deg,var(--accent-orange),transparent); }
+        .result-card[data-accent="green"]::before { background:linear-gradient(90deg,var(--accent-green),transparent); }
+        .result-card__header { display:flex; align-items:center; gap:var(--sp-3); margin-bottom:var(--sp-4); }
+        .result-card__icon { width:40px; height:40px; border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:center; font-size:1.2rem; background:rgba(232,93,4,0.08); }
+        .result-card__type { font-size:10px; text-transform:uppercase; letter-spacing:1px; font-weight:600; color:var(--text-secondary); }
+        .result-card__name { font-size:16px; font-weight:700; color:var(--text-primary); }
+        .result-card__accuracy { font-family:'JetBrains Mono',monospace; font-size:32px; font-weight:700; }
+        .result-card[data-accent="cyan"] .result-card__accuracy { color:var(--accent-cyan); }
+        .result-card[data-accent="purple"] .result-card__accuracy { color:var(--accent-purple); }
+        .result-card[data-accent="orange"] .result-card__accuracy { color:var(--accent-orange); }
+        .result-card[data-accent="green"] .result-card__accuracy { color:var(--accent-green); }
+        .result-card__accuracy-label { font-size:12px; color:var(--text-secondary); margin-bottom:var(--sp-3); }
+        .result-card__metrics { display:grid; grid-template-columns:1fr 1fr; gap:var(--sp-2); }
+        .result-metric { background:var(--bg-primary); border-radius:var(--radius-sm); padding:var(--sp-2) var(--sp-3); }
+        .result-metric__label { font-size:10px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; }
+        .result-metric__value { font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600; color:var(--text-primary); }
+        .status-badge { display:inline-flex; align-items:center; gap:var(--sp-2); padding:3px 10px; border-radius:var(--radius-full); font-size:11px; font-weight:600; margin-top:var(--sp-3); background:rgba(45,106,79,0.08); color:var(--success); }
+        .status-badge::before { content:''; width:5px; height:5px; border-radius:50%; background:currentColor; }
+
+        /* Charts section */
+        .charts-section { display:none; margin-top:var(--sp-12); }
+        .charts-section.visible { display:block; }
+        .charts-grid-2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(420px,1fr)); gap:var(--sp-6); margin-bottom:var(--sp-6); }
+        .charts-grid-4 { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:var(--sp-6); margin-bottom:var(--sp-6); }
+        .chart-panel { position:relative; }
+        .chart-panel canvas { width:100% !important; max-height:320px; }
+
+        /* Data Stats Table */
+        .stats-table { width:100%; border-collapse:collapse; }
+        .stats-table thead { background:var(--bg-primary); }
+        .stats-table th { padding:var(--sp-3) var(--sp-4); text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border); }
+        .stats-table td { padding:var(--sp-3) var(--sp-4); font-size:13px; border-bottom:1px solid var(--border); font-family:'JetBrains Mono',monospace; color:var(--text-primary); }
+        .stats-table tr:hover td { background:rgba(232,93,4,0.03); }
+
+        /* Confusion Matrix */
+        .cm-grid { display:grid; grid-template-columns:auto 1fr 1fr; grid-template-rows:auto 1fr 1fr; gap:2px; max-width:260px; margin:var(--sp-4) auto; }
+        .cm-cell { display:flex; align-items:center; justify-content:center; padding:var(--sp-3); font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:600; border-radius:var(--radius-sm); min-height:52px; }
+        .cm-label { font-size:11px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; }
+        .cm-tn { background:rgba(45,106,79,0.1); color:var(--success); }
+        .cm-fp { background:rgba(208,0,0,0.08); color:var(--error); }
+        .cm-fn { background:rgba(232,93,4,0.08); color:var(--warning); }
+        .cm-tp { background:rgba(14,165,233,0.1); color:var(--accent-cyan); }
+
+        /* Preview table */
+        .data-preview { display:none; margin-top:var(--sp-6); overflow-x:auto; }
+        .data-preview.visible { display:block; }
+        .preview-table { width:100%; border-collapse:collapse; min-width:600px; }
+        .preview-table thead { background:var(--bg-primary); }
+        .preview-table th { padding:var(--sp-3) 14px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border); }
+        .preview-table td { padding:var(--sp-3) 14px; font-size:12px; border-bottom:1px solid var(--border); font-family:'JetBrains Mono',monospace; color:var(--text-primary); }
+        .preview-table tr:hover td { background:rgba(232,93,4,0.03); }
+
+        /* Footer */
+        footer { text-align:center; padding:var(--sp-10) var(--sp-6); border-top:1px solid var(--border); color:var(--text-secondary); font-size:13px; margin-top:var(--sp-16); }
+
+        @media(max-width:768px) {
+            .hero { padding:var(--sp-10) var(--sp-4) var(--sp-6); }
+            .hero h1 { font-size:28px; }
+            .results-grid, .charts-grid-2, .charts-grid-4 { grid-template-columns:1fr; }
+            .upload-zone { padding:var(--sp-8) var(--sp-4); }
+        }
+    </style>
+</head>
+<body>
+
+<section class="hero">
+    <div class="container">
+        <div class="hero__badge">IOT ANOMALY DETECTION</div>
+        <h1><span>Multi-Model</span> Analysis Dashboard</h1>
+        <p>Upload your sensor CSV — get deep analytics, model comparisons, confusion matrices, and sensor insights.</p>
+    </div>
+</section>
+
+<section class="container upload-section" id="upload-section">
+    <div class="upload-zone" id="upload-zone">
+        <div class="upload-zone__icon"></div>
+        <div class="upload-zone__title">Drag & drop your CSV here</div>
+        <div class="upload-zone__subtitle">or <span id="browse-trigger">browse files</span></div>
+        <div class="upload-zone__hint">Required: Temperature, Humidity, Light, CO2, HumidityRatio</div>
+        <input type="file" id="csv-file-input" accept=".csv">
+    </div>
+    <div class="upload-error" id="upload-error"></div>
+    <div class="file-info panel" id="file-info">
+        <div class="file-info__header">
+            <div><div class="file-info__name" id="file-name"></div><div class="file-info__meta" id="file-meta"></div></div>
+            <button class="file-info__remove" id="file-remove">✕ Remove</button>
+        </div>
+    </div>
+</section>
+
+<section class="container">
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Running Models on Your Data...</div>
+        <div class="loading-subtext">Training SVM, Quantum Kernel, LSTM, and GDN — this takes a moment.</div>
+    </div>
+</section>
+
+<!-- DATA PREVIEW -->
+<section class="container">
+    <div class="data-preview panel" id="data-preview">
+        <div class="panel-title">Data Preview (first 5 rows)</div>
+        <div id="preview-table-wrap" style="overflow-x:auto;"></div>
+    </div>
+</section>
+
+<!-- MODEL RESULTS -->
+<section class="container" id="results-wrap">
+    <div class="analysis-results" id="analysis-results">
+        <div class="section-header">
+            <div class="section-header__title">Model Results</div>
+            <div class="section-header__subtitle">Each model's anomaly detection performance on your data</div>
+        </div>
+        <div class="results-grid" id="results-grid"></div>
+    </div>
+</section>
+
+<!-- CHARTS -->
+<section class="container" id="charts-wrap">
+    <div class="charts-section" id="charts-section">
+        <hr class="section-divider">
+
+        <!-- Row 1: Accuracy Comparison + Metrics Comparison -->
+        <div class="section-header">
+            <div class="section-header__title">Detailed Model Comparison</div>
+            <div class="section-header__subtitle">Performance metrics across all models</div>
+        </div>
+        <div class="charts-grid-2">
+            <div class="panel chart-panel"><div class="panel-title">Model Accuracy Comparison</div><canvas id="chart-accuracy"></canvas></div>
+            <div class="panel chart-panel"><div class="panel-title">Precision / Recall / F1 Comparison</div><canvas id="chart-prf"></canvas></div>
+        </div>
+
+        <!-- Row 2: Confusion Matrices -->
+        <div class="section-header" style="margin-top:var(--sp-8);">
+            <div class="section-header__title">Confusion Matrices</div>
+            <div class="section-header__subtitle">True Positives, True Negatives, False Positives, False Negatives per model</div>
+        </div>
+        <div class="charts-grid-4" id="confusion-grid"></div>
+
+        <!-- Row 3: Anomaly Distribution -->
+        <div class="charts-grid-2" style="margin-top:var(--sp-5);">
+            <div class="panel chart-panel"><div class="panel-title">Anomalies Detected Per Model</div><canvas id="chart-anomaly-dist"></canvas></div>
+            <div class="panel chart-panel"><div class="panel-title">Dataset Class Balance</div><canvas id="chart-class-balance"></canvas></div>
+        </div>
+
+        <hr class="section-divider">
+
+        <!-- Row 4: Sensor Analytics -->
+        <div class="section-header">
+            <div class="section-header__title">Sensor Data Analytics</div>
+            <div class="section-header__subtitle">Deep insights from your IoT sensor readings</div>
+        </div>
+
+        <!-- Sensor Stats Table -->
+        <div class="panel" style="margin-bottom:var(--sp-5); overflow-x:auto;">
+            <div class="panel-title">Sensor Statistics Summary</div>
+            <table class="stats-table" id="stats-table"></table>
+        </div>
+
+        <!-- Sensor Timelines -->
+        <div class="charts-grid-2">
+            <div class="panel chart-panel"><div class="panel-title">Temperature & Humidity Over Time</div><canvas id="chart-temp-humid"></canvas></div>
+            <div class="panel chart-panel"><div class="panel-title">CO2 & Light Over Time</div><canvas id="chart-co2-light"></canvas></div>
+        </div>
+
+        <!-- Sensor histograms + Correlation -->
+        <div class="charts-grid-2" style="margin-top:var(--sp-5);">
+            <div class="panel chart-panel"><div class="panel-title">Sensor Value Distributions</div><canvas id="chart-histograms"></canvas></div>
+            <div class="panel chart-panel"><div class="panel-title">Sensor Correlation Heatmap</div><canvas id="chart-correlation"></canvas></div>
+        </div>
+
+        <hr class="section-divider">
+
+        <!-- Row 5: Prediction Timeline -->
+        <div class="section-header">
+            <div class="section-header__title">Prediction Timeline</div>
+            <div class="section-header__subtitle">How each model classified samples across the dataset</div>
+        </div>
+        <div class="panel chart-panel" style="margin-bottom:var(--sp-5);"><div class="panel-title">Model Predictions vs Ground Truth</div><canvas id="chart-predictions"></canvas></div>
+
+        <!-- GDN Anomaly Scores if available -->
+        <div class="panel chart-panel" id="gdn-scores-panel" style="display:none; margin-bottom:var(--sp-5);">
+            <div class="panel-title">GDN Anomaly Scores Over Time</div>
+            <canvas id="chart-gdn-scores"></canvas>
+        </div>
+
+    </div>
+</section>
+
+<footer><div class="container"><p>IoT Anomaly Detection — Multi-Model Dashboard</p><p style="margin-top:3px;">SVM · Quantum Kernel · LSTM Autoencoder · GDN</p></div></footer>
+
+<script>
+(function() {
+    const API = 'http://localhost:8000/api/analyze';
+    const COLORS = { cyan:'#0EA5E9', purple:'#9D4EDD', orange:'#E85D04', green:'#2D6A4F' };
+
+    const zone = document.getElementById('upload-zone');
+    const input = document.getElementById('csv-file-input');
+    const browse = document.getElementById('browse-trigger');
+    const errorEl = document.getElementById('upload-error');
+    const fileInfo = document.getElementById('file-info');
+    const fileName = document.getElementById('file-name');
+    const fileMeta = document.getElementById('file-meta');
+    const removeBtn = document.getElementById('file-remove');
+    const preview = document.getElementById('data-preview');
+    const previewWrap = document.getElementById('preview-table-wrap');
+    const loadingEl = document.getElementById('loading-overlay');
+    const resultsDiv = document.getElementById('analysis-results');
+    const resultsGrid = document.getElementById('results-grid');
+    const chartsDiv = document.getElementById('charts-section');
+
+    let charts = [];
+
+    browse.addEventListener('click', e => { e.stopPropagation(); input.click(); });
+    zone.addEventListener('click', () => input.click());
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('drag-over'); if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
+    input.addEventListener('change', () => { if(input.files.length) handleFile(input.files[0]); });
+    removeBtn.addEventListener('click', resetUI);
+
+    function resetUI() {
+        input.value=''; errorEl.classList.remove('visible'); errorEl.textContent='';
+        fileInfo.classList.remove('visible'); preview.classList.remove('visible');
+        loadingEl.classList.remove('visible'); resultsDiv.classList.remove('visible');
+        chartsDiv.classList.remove('visible');
+        resultsGrid.innerHTML=''; previewWrap.innerHTML='';
+        charts.forEach(c=>c.destroy()); charts=[];
+        document.getElementById('confusion-grid').innerHTML='';
+        document.getElementById('gdn-scores-panel').style.display='none';
+        window.scrollTo({top:0,behavior:'smooth'});
+    }
+
+    function showError(msg) { errorEl.textContent=msg; errorEl.classList.add('visible'); }
+
+    async function handleFile(file) {
+        resetUI();
+        if(!file.name.toLowerCase().endsWith('.csv')) { showError('Please upload a .csv file.'); return; }
+
+        fileName.textContent = file.name;
+        fileMeta.textContent = (file.size/1024).toFixed(1)+' KB';
+        fileInfo.classList.add('visible');
+        loadingEl.classList.add('visible');
+        loadingEl.scrollIntoView({behavior:'smooth',block:'center'});
+
+        try {
+            const fd = new FormData(); fd.append('file', file);
+            const resp = await fetch(API, { method:'POST', body:fd });
+            loadingEl.classList.remove('visible');
+
+            if(!resp.ok) { const e=await resp.json(); showError(e.error||'Server error'); return; }
+            const data = await resp.json();
+
+            fileMeta.textContent = (data.file_info.size/1024).toFixed(1)+' KB · '+data.file_info.rows+' rows · '+data.file_info.columns+' cols';
+            renderPreview(data.preview);
+            preview.classList.add('visible');
+            renderResults(data.results);
+            resultsDiv.classList.add('visible');
+            renderCharts(data);
+            chartsDiv.classList.add('visible');
+            setTimeout(()=>resultsDiv.scrollIntoView({behavior:'smooth',block:'start'}),150);
+        } catch(err) {
+            loadingEl.classList.remove('visible');
+            showError('Cannot connect to backend at '+API+'. Make sure it is running.');
+        }
+    }
+
+    function renderPreview(p) {
+        let h='<table class="preview-table"><thead><tr>';
+        p.headers.forEach(c=>h+='<th>'+c+'</th>');
+        h+='</tr></thead><tbody>';
+        p.rows.forEach(r=>{h+='<tr>';r.forEach(v=>h+='<td>'+(v!==null?v:'')+'</td>');h+='</tr>';});
+        h+='</tbody></table>'; previewWrap.innerHTML=h;
+    }
+
+    function renderResults(results) {
+        resultsGrid.innerHTML='';
+        results.forEach(r => {
+            let mH=''; r.metrics.forEach(m=>{mH+=`<div class="result-metric"><div class="result-metric__label">${m.label}</div><div class="result-metric__value">${m.value}</div></div>`;});
+            const c=document.createElement('div'); c.className='result-card'; c.setAttribute('data-accent',r.accent);
+            c.innerHTML=`<div class="result-card__header"><div class="result-card__icon">${r.icon}</div><div><div class="result-card__type">${r.type}</div><div class="result-card__name">${r.name}</div></div></div>
+                <div class="result-card__accuracy">${r.accuracy}</div><div class="result-card__accuracy-label">Accuracy</div>
+                <div class="result-card__metrics">${mH}</div><div class="status-badge">${r.statusText}</div>`;
+            resultsGrid.appendChild(c);
+        });
+    }
+
+    // ── Chart Rendering ──
+    Chart.defaults.color = '#6B6B6B';
+    Chart.defaults.borderColor = 'rgba(0,0,0,0.06)';
+    Chart.defaults.font.family = "'Space Grotesk', sans-serif";
+
+    function makeChart(id, config) {
+        const ctx = document.getElementById(id);
+        if(!ctx) return null;
+        const c = new Chart(ctx, config);
+        charts.push(c);
+        return c;
+    }
+
+    function renderCharts(data) {
+        const R = data.results;
+        const A = data.analytics;
+        const names = R.map(r=>r.name);
+        const accents = R.map(r=>COLORS[r.accent]||'#888');
+
+        // 1. Accuracy Bar Chart
+        makeChart('chart-accuracy', {
+            type:'bar',
+            data:{ labels:names, datasets:[{ label:'Accuracy %', data:R.map(r=>r.accuracy_val||0), backgroundColor:accents.map(c=>c+'CC'), borderColor:accents, borderWidth:2, borderRadius:6 }] },
+            options:{ responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}}} }
+        });
+
+        // 2. Precision / Recall / F1 Grouped Bar
+        makeChart('chart-prf', {
+            type:'bar',
+            data:{
+                labels:names,
+                datasets:[
+                    { label:'Precision', data:R.map(r=>r.precision_val||0), backgroundColor:'rgba(232,93,4,0.7)', borderRadius:4 },
+                    { label:'Recall', data:R.map(r=>r.recall_val||0), backgroundColor:'rgba(157,78,221,0.7)', borderRadius:4 },
+                    { label:'F1-Score', data:R.map(r=>r.f1_val||0), backgroundColor:'rgba(14,165,233,0.7)', borderRadius:4 },
+                ]
+            },
+            options:{ responsive:true, scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}}}, plugins:{legend:{position:'top',labels:{boxWidth:12,padding:10}}} }
+        });
+
+        // 3. Confusion Matrices
+        const cmGrid = document.getElementById('confusion-grid');
+        cmGrid.innerHTML='';
+        R.forEach(r => {
+            if(!r.confusion) return;
+            const cm = r.confusion;
+            const p = document.createElement('div');
+            p.className='panel';
+            p.innerHTML=`<div class="panel-title" style="color:${COLORS[r.accent]||'#888'}">${r.icon} ${r.name}</div>
+                <div class="cm-grid">
+                    <div class="cm-cell cm-label"></div><div class="cm-cell cm-label">Pred 0</div><div class="cm-cell cm-label">Pred 1</div>
+                    <div class="cm-cell cm-label">True 0</div><div class="cm-cell cm-tn">${cm.tn}</div><div class="cm-cell cm-fp">${cm.fp}</div>
+                    <div class="cm-cell cm-label">True 1</div><div class="cm-cell cm-fn">${cm.fn}</div><div class="cm-cell cm-tp">${cm.tp}</div>
+                </div>
+                <div style="text-align:center;margin-top:var(--sp-3);font-size:11px;color:var(--text-secondary);">
+                    TN=${cm.tn} · FP=${cm.fp} · FN=${cm.fn} · TP=${cm.tp}
+                </div>`;
+            cmGrid.appendChild(p);
+        });
+
+        // 4. Anomalies Detected per model (bar)
+        const anomCounts = R.map(r => {
+            const parts = r.metrics.find(m=>m.label==='Anomalies');
+            return parts ? parseInt(parts.value.split('/')[0]) : 0;
+        });
+        const totalCounts = R.map(r => {
+            const parts = r.metrics.find(m=>m.label==='Anomalies');
+            return parts ? parseInt(parts.value.split('/')[1]) : 0;
+        });
+        makeChart('chart-anomaly-dist', {
+            type:'bar',
+            data:{
+                labels:names,
+                datasets:[
+                    { label:'Anomalies', data:anomCounts, backgroundColor:accents.map(c=>c+'AA'), borderRadius:6, borderColor:accents, borderWidth:1 },
+                    { label:'Normal', data:totalCounts.map((t,i)=>t-anomCounts[i]), backgroundColor:'rgba(224,213,199,0.3)', borderRadius:6 },
+                ]
+            },
+            options:{ responsive:true, plugins:{legend:{position:'top',labels:{boxWidth:12}}}, scales:{x:{stacked:true},y:{stacked:true}} }
+        });
+
+        // 5. Class Balance (doughnut)
+        if(A.class_distribution) {
+            const cd = A.class_distribution;
+            makeChart('chart-class-balance', {
+                type:'doughnut',
+                data:{
+                    labels:['Normal ('+cd.normal+')','Anomaly ('+cd.anomaly+')'],
+                    datasets:[{ data:[cd.normal,cd.anomaly], backgroundColor:['rgba(45,106,79,0.7)','rgba(208,0,0,0.7)'], borderColor:['#2D6A4F','#D00000'], borderWidth:2, hoverOffset:8 }]
+                },
+                options:{ responsive:true, plugins:{legend:{position:'bottom',labels:{padding:16,boxWidth:12}},title:{display:true,text:`Anomaly Rate: ${cd.anomaly_rate}%`,font:{size:13},color:'#1A1A1A'}} }
+            });
+        }
+
+        // 6. Sensor Stats Table
+        if(A.sensor_stats) {
+            const st = document.getElementById('stats-table');
+            let th='<thead><tr><th>Sensor</th><th>Min</th><th>Q1</th><th>Median</th><th>Mean</th><th>Q3</th><th>Max</th><th>Std Dev</th></tr></thead><tbody>';
+            for(const[col,s] of Object.entries(A.sensor_stats)) {
+                th+=`<tr><td style="color:var(--primary);font-weight:600;">${col}</td><td>${s.min}</td><td>${s.q1}</td><td>${s.median}</td><td>${s.mean}</td><td>${s.q3}</td><td>${s.max}</td><td>${s.std}</td></tr>`;
+            }
+            th+='</tbody>'; st.innerHTML=th;
+        }
+
+        // 7. Temperature & Humidity timeline
+        if(A.sensor_timelines) {
+            const tl = A.sensor_timelines;
+            const len = tl.Temperature ? tl.Temperature.length : 0;
+            const lbls = Array.from({length:len},(_,i)=>i);
+            const datasets = [];
+            if(tl.Temperature) datasets.push({label:'Temperature',data:tl.Temperature,borderColor:'#E85D04',backgroundColor:'rgba(232,93,4,0.06)',fill:true,pointRadius:0,borderWidth:1.5,tension:0.3});
+            if(tl.Humidity) datasets.push({label:'Humidity',data:tl.Humidity,borderColor:'#9D4EDD',backgroundColor:'rgba(157,78,221,0.06)',fill:true,pointRadius:0,borderWidth:1.5,tension:0.3});
+            makeChart('chart-temp-humid',{
+                type:'line', data:{labels:lbls,datasets},
+                options:{responsive:true,plugins:{legend:{position:'top',labels:{boxWidth:12}}},scales:{x:{display:false},y:{grid:{color:'rgba(0,0,0,0.04)'}}},interaction:{intersect:false,mode:'index'}}
+            });
+
+            // CO2 & Light timeline
+            const ds2 = [];
+            if(tl.CO2) ds2.push({label:'CO2',data:tl.CO2,borderColor:'#2D6A4F',backgroundColor:'rgba(45,106,79,0.06)',fill:true,pointRadius:0,borderWidth:1.5,tension:0.3,yAxisID:'y'});
+            if(tl.Light) ds2.push({label:'Light',data:tl.Light,borderColor:'#0EA5E9',backgroundColor:'rgba(14,165,233,0.06)',fill:true,pointRadius:0,borderWidth:1.5,tension:0.3,yAxisID:'y1'});
+            makeChart('chart-co2-light',{
+                type:'line', data:{labels:lbls,datasets:ds2},
+                options:{responsive:true,plugins:{legend:{position:'top',labels:{boxWidth:12}}},scales:{x:{display:false},y:{position:'left',grid:{color:'rgba(0,0,0,0.04)'}},y1:{position:'right',grid:{drawOnChartArea:false}}},interaction:{intersect:false,mode:'index'}}
+            });
+        }
+
+        // 8. Sensor Histograms (grouped bar)
+        if(A.histograms) {
+            const hists = A.histograms;
+            const cols = Object.keys(hists);
+            // Use Temperature histogram bins as reference
+            const refCol = cols[0];
+            const binLabels = hists[refCol].edges.slice(0,-1).map((e,i)=>`${e.toFixed(0)}`);
+            const hColors = ['#E85D04','#9D4EDD','#0EA5E9','#2D6A4F','#D00000'];
+            const hDatasets = cols.map((col,ci)=>({
+                label:col, data:hists[col].counts, backgroundColor:hColors[ci%hColors.length]+'88',
+                borderColor:hColors[ci%hColors.length], borderWidth:1, borderRadius:2, barPercentage:0.9
+            }));
+            makeChart('chart-histograms',{
+                type:'bar', data:{labels:binLabels,datasets:hDatasets},
+                options:{responsive:true,plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:10}}}},scales:{x:{display:false},y:{grid:{color:'rgba(0,0,0,0.04)'}}}}
+            });
+        }
+
+        // 9. Correlation Heatmap (scatter-based approximation with colors)
+        if(A.correlation) {
+            const corr = A.correlation;
+            const n = corr.labels.length;
+            const ctx = document.getElementById('chart-correlation').getContext('2d');
+            const cellW = 260/n;
+            const canvas = document.getElementById('chart-correlation');
+            canvas.width = 320; canvas.height = 280;
+
+            // Draw custom heatmap
+            const ox = 70, oy = 30;
+            const cw = (canvas.width - ox - 20) / n;
+            const ch = (canvas.height - oy - 40) / n;
+
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            ctx.font = '10px Space Grotesk'; ctx.textAlign = 'center';
+
+            // Column labels
+            corr.labels.forEach((l,i) => {
+                ctx.fillStyle = '#6B6B6B';
+                ctx.save(); ctx.translate(ox + i*cw + cw/2, canvas.height - 5);
+                ctx.fillText(l.substring(0,6), 0, 0);
+                ctx.restore();
+            });
+            // Row labels
+            ctx.textAlign = 'right';
+            corr.labels.forEach((l,i) => {
+                ctx.fillStyle = '#6B6B6B';
+                ctx.fillText(l.substring(0,8), ox-6, oy + i*ch + ch/2 + 4);
+            });
+
+            // Cells
+            for(let i=0; i<n; i++) {
+                for(let j=0; j<n; j++) {
+                    const v = corr.matrix[i][j];
+                    const r = Math.round(v > 0 ? 52+v*200 : 239);
+                    const g = Math.round(v > 0 ? 211 : 68+Math.abs(v)*80);
+                    const b = Math.round(v > 0 ? 153+v*100 : 68);
+                    const a = Math.max(0.2, Math.abs(v));
+                    ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+                    ctx.fillRect(ox + j*cw + 1, oy + i*ch + 1, cw-2, ch-2);
+
+                    ctx.fillStyle = Math.abs(v) > 0.5 ? '#1A1A1A' : '#6B6B6B';
+                    ctx.textAlign = 'center';
+                    ctx.font = '11px JetBrains Mono';
+                    ctx.fillText(v.toFixed(2), ox + j*cw + cw/2, oy + i*ch + ch/2 + 4);
+                }
+            }
+        }
+
+        // 10. Prediction Timeline
+        if(R[0].predictions) {
+            const len = R[0].predictions.length;
+            const lbls = Array.from({length:len},(_,i)=>i);
+            const pds = R.map(r => ({
+                label:r.name, data:r.predictions.map((v,i)=>v===1?R.indexOf(r)+1:null),
+                borderColor:COLORS[r.accent], backgroundColor:COLORS[r.accent]+'44',
+                pointRadius:1.5, pointBackgroundColor:COLORS[r.accent],
+                showLine:false, yAxisID:'y'
+            }));
+            if(A.ground_truth) {
+                pds.unshift({
+                    label:'Ground Truth', data:A.ground_truth.map(v=>v===1?0:null),
+                    borderColor:'#D00000', backgroundColor:'rgba(208,0,0,0.3)',
+                    pointRadius:1.5, showLine:false, yAxisID:'y'
+                });
+            }
+            makeChart('chart-predictions',{
+                type:'scatter', data:{datasets:pds.map(d=>({...d,data:d.data.map((v,i)=>v!==null?{x:i,y:v}:null).filter(Boolean)}))},
+                options:{responsive:true,plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:10}}}},
+                    scales:{
+                        x:{title:{display:true,text:'Sample Index',color:'#6B6B6B'},grid:{color:'rgba(0,0,0,0.04)'}},
+                        y:{title:{display:true,text:'Model',color:'#6B6B6B'},ticks:{callback:function(v){const m=['Ground Truth','SVM','Quantum','LSTM','GDN'];return m[v]||'';}},grid:{color:'rgba(0,0,0,0.04)'},min:-0.5,max:4.5}
+                    }
+                }
+            });
+        }
+
+        // 11. GDN Anomaly Scores
+        const gdn = R.find(r=>r.name.includes('GDN'));
+        if(gdn && gdn.anomaly_scores) {
+            document.getElementById('gdn-scores-panel').style.display='block';
+            const scores = gdn.anomaly_scores;
+            const lbls = Array.from({length:scores.length},(_,i)=>i);
+            makeChart('chart-gdn-scores',{
+                type:'line',
+                data:{labels:lbls,datasets:[{label:'Anomaly Score',data:scores,borderColor:'#2D6A4F',backgroundColor:'rgba(45,106,79,0.08)',fill:true,pointRadius:0,borderWidth:1.5,tension:0.2}]},
+                options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{display:false},y:{title:{display:true,text:'Deviation Score',color:'#6B6B6B'},grid:{color:'rgba(0,0,0,0.04)'}}}}
+            });
+        }
+    }
+})();
+</script>
+</body>
+</html>
