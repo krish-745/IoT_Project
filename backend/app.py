@@ -14,7 +14,7 @@ import pandas as pd
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sklearn.svm import SVC
+from sklearn.svm import SVC, OneClassSVM
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.metrics import (
@@ -125,9 +125,11 @@ def compute_class_distribution(df: pd.DataFrame):
 def downsample_timeline(arr, max_points=500):
     """Downsample an array for timeline plotting (keeps shape of the signal)."""
     if len(arr) <= max_points:
+        if isinstance(arr, list):
+            return arr
         return arr.tolist()
     step = max(1, len(arr) // max_points)
-    return arr[::step].tolist()
+    return arr[::step].tolist() if not isinstance(arr, list) else arr[::step]
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -156,7 +158,6 @@ def run_svm_model(df: pd.DataFrame):
         anom = int(y_pred.sum())
         total = len(y_pred)
 
-        # Full dataset predictions for timeline
         X_all = scaler.transform(X)
         y_pred_all = model.predict(X_all)
     else:
@@ -267,44 +268,99 @@ def run_quantum_model(df: pd.DataFrame):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  MODEL 3: Isolation Forest (LSTM proxy)
+#  MODEL 3: Deep LSTM Autoencoder (TensorFlow/Keras)
 # ═══════════════════════════════════════════════════════════════════════
 def run_lstm_model(df: pd.DataFrame):
     start = time.time()
     has_label = LABEL_COL in df.columns
     X = df[["Temperature", "Humidity"]].values.astype(float)
     scaler = MinMaxScaler()
+    
+    try:
+        import tensorflow as tf
+        from tensorflow.keras.layers import Input, LSTM, Dense, RepeatVector, TimeDistributed, LayerNormalization
+        from tensorflow.keras.models import Model
+        tf.get_logger().setLevel('ERROR')
 
-    if has_label:
-        y = df[LABEL_COL].values.astype(int)
-        normal_mask = y == 0
-        X_normal = X[normal_mask]
-        n_train = int(len(X_normal) * 0.7)
-        X_train = scaler.fit_transform(X_normal[:n_train])
+        WINDOW = 5
+        def create_sequences(data, window):
+            X_seq = []
+            for i in range(len(data) - window):
+                X_seq.append(data[i : i + window])
+            return np.array(X_seq)
 
-        iso = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
-        iso.fit(X_train)
+        X_scaled = scaler.fit_transform(X)
+        X_seq = create_sequences(X_scaled, WINDOW)
 
-        X_all_scaled = scaler.transform(X)
-        iso_pred = iso.predict(X_all_scaled)
-        y_pred = np.where(iso_pred == -1, 1, 0)
+        if has_label:
+            y = df[LABEL_COL].values.astype(int)
+            normal_mask = y == 0
+            X_normal = X[normal_mask]
+            X_train_scaled = scaler.fit_transform(X_normal)
+            X_train_seq = create_sequences(X_train_scaled, WINDOW)
+        else:
+            y = np.zeros(len(X))
+            X_train_seq = X_seq
 
-        m = compute_metrics(y, y_pred)
-        cm = compute_confusion(y, y_pred)
-        anom = int(y_pred.sum())
-        total = len(y_pred)
-        y_pred_all = y_pred
-    else:
+        # Autoencoder architecture
+        inputs = Input(shape=(X_train_seq.shape[1], X_train_seq.shape[2]))
+        L1 = LSTM(16, return_sequences=True)(inputs)
+        L2 = LayerNormalization()(L1)
+        L3 = LSTM(4, return_sequences=False)(L2)
+        L4 = RepeatVector(X_train_seq.shape[1])(L3)
+        L5 = LSTM(16, return_sequences=True)(L4)
+        L6 = LayerNormalization()(L5)
+        output = TimeDistributed(Dense(X_train_seq.shape[2]))(L6)
+
+        model = Model(inputs=inputs, outputs=output)
+        model.compile(optimizer='adam', loss='mae')
+
+        # Fast training setup
+        model.fit(X_train_seq, X_train_seq, epochs=5, batch_size=32, verbose=0)
+
+        # Reconstruction Error
+        preds = model.predict(X_seq, verbose=0)
+        mae = np.mean(np.abs(preds - X_seq), axis=(1, 2))
+
+        # Dynamic Thresholding (e.g. 90th percentile)
+        threshold = np.percentile(mae, 90)
+        y_pred_seq = (mae > threshold).astype(int)
+
+        y_pred_all = np.zeros(len(X), dtype=int)
+        y_pred_all[WINDOW:] = y_pred_seq
+
+        if has_label:
+            y_true = y[WINDOW:]
+            m = compute_metrics(y_true, y_pred_seq)
+            cm = compute_confusion(y_true, y_pred_seq)
+        else:
+            m = {"accuracy": None, "precision": None, "recall": None, "f1": None}
+            cm = None
+
+        anom = int(y_pred_seq.sum())
+        total = len(y_pred_seq)
+        status_txt = f"TF/Keras Autoencoder (window={WINDOW})"
+
+    except ImportError:
+        # Fallback if TensorFlow isn't installed
+        print("TensorFlow not found. Using IsolationForest fallback.")
         X_scaled = scaler.fit_transform(X)
         iso = IsolationForest(n_estimators=100, contamination=0.1, random_state=42)
         iso.fit(X_scaled)
         iso_pred = iso.predict(X_scaled)
-        y_pred = np.where(iso_pred == -1, 1, 0)
-        m = {"accuracy": None, "precision": None, "recall": None, "f1": None}
-        cm = None
-        anom = int(y_pred.sum())
-        total = len(y_pred)
-        y_pred_all = y_pred
+        y_pred_all = np.where(iso_pred == -1, 1, 0)
+        
+        if has_label:
+            y = df[LABEL_COL].values.astype(int)
+            m = compute_metrics(y, y_pred_all)
+            cm = compute_confusion(y, y_pred_all)
+        else:
+            m = {"accuracy": None, "precision": None, "recall": None, "f1": None}
+            cm = None
+            
+        anom = int(y_pred_all.sum())
+        total = len(y_pred_all)
+        status_txt = "Fallback: IsolationForest"
 
     elapsed = round(time.time() - start, 2)
 
@@ -313,7 +369,7 @@ def run_lstm_model(df: pd.DataFrame):
         "type": "Deep Learning",
         "accent": "orange",
         "icon": "🧠",
-        "accuracy": f"{m['accuracy']:.2f}%" if m["accuracy"] is not None else "—",
+        "accuracy": f"{m['accuracy']:.2f}%" if m['accuracy'] is not None else "—",
         "accuracy_val": m["accuracy"],
         "precision_val": m["precision"],
         "recall_val": m["recall"],
@@ -325,10 +381,10 @@ def run_lstm_model(df: pd.DataFrame):
             {"label": "Recall", "value": f"{m['recall']}%" if m["recall"] is not None else "—"},
             {"label": "F1-Score", "value": f"{m['f1']}%" if m["f1"] is not None else "—"},
             {"label": "Anomalies", "value": f"{anom}/{total}"},
-            {"label": "Estimators", "value": "100"},
+            {"label": "Architecture", "value": "Seq2Seq"},
             {"label": "Time", "value": f"{elapsed}s"},
         ],
-        "statusText": f"IsolationForest on {total} samples" if True else "",
+        "statusText": status_txt,
     }
 
 
@@ -552,7 +608,7 @@ async def analyze(file: UploadFile = File(...)):
         results.append(run_quantum_model(df))
         print(f"  ✓ Quantum done — {results[-1]['accuracy']}")
 
-        print("[3/4] Running Isolation Forest (LSTM proxy)...")
+        print("[3/4] Running Deep LSTM Autoencoder...")
         results.append(run_lstm_model(df))
         print(f"  ✓ LSTM done — {results[-1]['accuracy']}")
 
