@@ -133,7 +133,6 @@
         .result-card[data-accent="green"]::before { background:linear-gradient(90deg,var(--accent-green),transparent); }
         .result-card__header { display:flex; align-items:center; gap:var(--sp-3); margin-bottom:var(--sp-4); }
         .result-card__icon { width:40px; height:40px; border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:center; font-size:1.2rem; background:rgba(232,93,4,0.08); }
-        .result-card__type { font-size:10px; text-transform:uppercase; letter-spacing:1px; font-weight:600; color:var(--text-secondary); }
         .result-card__name { font-size:16px; font-weight:700; color:var(--text-primary); }
         .result-card__accuracy { font-family:'JetBrains Mono',monospace; font-size:32px; font-weight:700; }
         .result-card[data-accent="cyan"] .result-card__accuracy { color:var(--accent-cyan); }
@@ -145,8 +144,6 @@
         .result-metric { background:var(--bg-primary); border-radius:var(--radius-sm); padding:var(--sp-2) var(--sp-3); }
         .result-metric__label { font-size:10px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; }
         .result-metric__value { font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600; color:var(--text-primary); }
-        .status-badge { display:inline-flex; align-items:center; gap:var(--sp-2); padding:3px 10px; border-radius:var(--radius-full); font-size:11px; font-weight:600; margin-top:var(--sp-3); background:rgba(45,106,79,0.08); color:var(--success); }
-        .status-badge::before { content:''; width:5px; height:5px; border-radius:50%; background:currentColor; }
 
         /* Charts section */
         .charts-section { display:none; margin-top:var(--sp-12); }
@@ -156,13 +153,6 @@
         .chart-panel { position:relative; }
         .chart-panel canvas { width:100% !important; max-height:320px; }
 
-        /* Data Stats Table */
-        .stats-table { width:100%; border-collapse:collapse; }
-        .stats-table thead { background:var(--bg-primary); }
-        .stats-table th { padding:var(--sp-3) var(--sp-4); text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border); }
-        .stats-table td { padding:var(--sp-3) var(--sp-4); font-size:13px; border-bottom:1px solid var(--border); font-family:'JetBrains Mono',monospace; color:var(--text-primary); }
-        .stats-table tr:hover td { background:rgba(232,93,4,0.03); }
-
         /* Confusion Matrix */
         .cm-grid { display:grid; grid-template-columns:auto 1fr 1fr; grid-template-rows:auto 1fr 1fr; gap:2px; max-width:260px; margin:var(--sp-4) auto; }
         .cm-cell { display:flex; align-items:center; justify-content:center; padding:var(--sp-3); font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:600; border-radius:var(--radius-sm); min-height:52px; }
@@ -171,15 +161,6 @@
         .cm-fp { background:rgba(208,0,0,0.08); color:var(--error); }
         .cm-fn { background:rgba(232,93,4,0.08); color:var(--warning); }
         .cm-tp { background:rgba(14,165,233,0.1); color:var(--accent-cyan); }
-
-        /* Preview table */
-        .data-preview { display:none; margin-top:var(--sp-6); overflow-x:auto; }
-        .data-preview.visible { display:block; }
-        .preview-table { width:100%; border-collapse:collapse; min-width:600px; }
-        .preview-table thead { background:var(--bg-primary); }
-        .preview-table th { padding:var(--sp-3) 14px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border); }
-        .preview-table td { padding:var(--sp-3) 14px; font-size:12px; border-bottom:1px solid var(--border); font-family:'JetBrains Mono',monospace; color:var(--text-primary); }
-        .preview-table tr:hover td { background:rgba(232,93,4,0.03); }
 
         /* Footer */
         footer { text-align:center; padding:var(--sp-10) var(--sp-6); border-top:1px solid var(--border); color:var(--text-secondary); font-size:13px; margin-top:var(--sp-16); }
@@ -227,15 +208,6 @@
     </div>
 </section>
 
-<!-- DATA PREVIEW -->
-<section class="container">
-    <div class="data-preview panel" id="data-preview">
-        <div class="panel-title">Data Preview (first 5 rows)</div>
-        <div id="preview-table-wrap" style="overflow-x:auto;"></div>
-    </div>
-</section>
-
-<!-- MODEL RESULTS -->
 <section class="container" id="results-wrap">
     <div class="analysis-results" id="analysis-results">
         <div class="section-header">
@@ -246,12 +218,9 @@
     </div>
 </section>
 
-<!-- CHARTS -->
 <section class="container" id="charts-wrap">
     <div class="charts-section" id="charts-section">
-        <hr class="section-divider">
 
-        <!-- Row 1: Accuracy Comparison + Metrics Comparison -->
         <div class="section-header">
             <div class="section-header__title">Detailed Model Comparison</div>
             <div class="section-header__subtitle">Performance metrics across all models</div>
@@ -261,59 +230,11 @@
             <div class="panel chart-panel"><div class="panel-title">Precision / Recall / F1 Comparison</div><canvas id="chart-prf"></canvas></div>
         </div>
 
-        <!-- Row 2: Confusion Matrices -->
         <div class="section-header" style="margin-top:var(--sp-8);">
             <div class="section-header__title">Confusion Matrices</div>
             <div class="section-header__subtitle">True Positives, True Negatives, False Positives, False Negatives per model</div>
         </div>
         <div class="charts-grid-4" id="confusion-grid"></div>
-
-        <!-- Row 3: Anomaly Distribution -->
-        <div class="charts-grid-2" style="margin-top:var(--sp-5);">
-            <div class="panel chart-panel"><div class="panel-title">Anomalies Detected Per Model</div><canvas id="chart-anomaly-dist"></canvas></div>
-            <div class="panel chart-panel"><div class="panel-title">Dataset Class Balance</div><canvas id="chart-class-balance"></canvas></div>
-        </div>
-
-        <hr class="section-divider">
-
-        <!-- Row 4: Sensor Analytics -->
-        <div class="section-header">
-            <div class="section-header__title">Sensor Data Analytics</div>
-            <div class="section-header__subtitle">Deep insights from your IoT sensor readings</div>
-        </div>
-
-        <!-- Sensor Stats Table -->
-        <div class="panel" style="margin-bottom:var(--sp-5); overflow-x:auto;">
-            <div class="panel-title">Sensor Statistics Summary</div>
-            <table class="stats-table" id="stats-table"></table>
-        </div>
-
-        <!-- Sensor Timelines -->
-        <div class="charts-grid-2">
-            <div class="panel chart-panel"><div class="panel-title">Temperature & Humidity Over Time</div><canvas id="chart-temp-humid"></canvas></div>
-            <div class="panel chart-panel"><div class="panel-title">CO2 & Light Over Time</div><canvas id="chart-co2-light"></canvas></div>
-        </div>
-
-        <!-- Sensor histograms + Correlation -->
-        <div class="charts-grid-2" style="margin-top:var(--sp-5);">
-            <div class="panel chart-panel"><div class="panel-title">Sensor Value Distributions</div><canvas id="chart-histograms"></canvas></div>
-            <div class="panel chart-panel"><div class="panel-title">Sensor Correlation Heatmap</div><canvas id="chart-correlation"></canvas></div>
-        </div>
-
-        <hr class="section-divider">
-
-        <!-- Row 5: Prediction Timeline -->
-        <div class="section-header">
-            <div class="section-header__title">Prediction Timeline</div>
-            <div class="section-header__subtitle">How each model classified samples across the dataset</div>
-        </div>
-        <div class="panel chart-panel" style="margin-bottom:var(--sp-5);"><div class="panel-title">Model Predictions vs Ground Truth</div><canvas id="chart-predictions"></canvas></div>
-
-        <!-- GDN Anomaly Scores if available -->
-        <div class="panel chart-panel" id="gdn-scores-panel" style="display:none; margin-bottom:var(--sp-5);">
-            <div class="panel-title">GDN Anomaly Scores Over Time</div>
-            <canvas id="chart-gdn-scores"></canvas>
-        </div>
 
     </div>
 </section>
@@ -333,8 +254,6 @@
     const fileName = document.getElementById('file-name');
     const fileMeta = document.getElementById('file-meta');
     const removeBtn = document.getElementById('file-remove');
-    const preview = document.getElementById('data-preview');
-    const previewWrap = document.getElementById('preview-table-wrap');
     const loadingEl = document.getElementById('loading-overlay');
     const resultsDiv = document.getElementById('analysis-results');
     const resultsGrid = document.getElementById('results-grid');
@@ -352,13 +271,12 @@
 
     function resetUI() {
         input.value=''; errorEl.classList.remove('visible'); errorEl.textContent='';
-        fileInfo.classList.remove('visible'); preview.classList.remove('visible');
+        fileInfo.classList.remove('visible');
         loadingEl.classList.remove('visible'); resultsDiv.classList.remove('visible');
         chartsDiv.classList.remove('visible');
-        resultsGrid.innerHTML=''; previewWrap.innerHTML='';
+        resultsGrid.innerHTML='';
         charts.forEach(c=>c.destroy()); charts=[];
         document.getElementById('confusion-grid').innerHTML='';
-        document.getElementById('gdn-scores-panel').style.display='none';
         window.scrollTo({top:0,behavior:'smooth'});
     }
 
@@ -383,8 +301,7 @@
             const data = await resp.json();
 
             fileMeta.textContent = (data.file_info.size/1024).toFixed(1)+' KB · '+data.file_info.rows+' rows · '+data.file_info.columns+' cols';
-            renderPreview(data.preview);
-            preview.classList.add('visible');
+            
             renderResults(data.results);
             resultsDiv.classList.add('visible');
             renderCharts(data);
@@ -396,22 +313,28 @@
         }
     }
 
-    function renderPreview(p) {
-        let h='<table class="preview-table"><thead><tr>';
-        p.headers.forEach(c=>h+='<th>'+c+'</th>');
-        h+='</tr></thead><tbody>';
-        p.rows.forEach(r=>{h+='<tr>';r.forEach(v=>h+='<td>'+(v!==null?v:'')+'</td>');h+='</tr>';});
-        h+='</tbody></table>'; previewWrap.innerHTML=h;
-    }
-
     function renderResults(results) {
         resultsGrid.innerHTML='';
+        // Intercept and filter out requested parameters before generating metrics HTML
+        const excludeLabels = ['time', 'status', 'architecture', 'params', 'kernel', 'parameters'];
+        
         results.forEach(r => {
-            let mH=''; r.metrics.forEach(m=>{mH+=`<div class="result-metric"><div class="result-metric__label">${m.label}</div><div class="result-metric__value">${m.value}</div></div>`;});
+            let mH=''; 
+            if(r.metrics) {
+                r.metrics.forEach(m => {
+                    if(!excludeLabels.includes(m.label.toLowerCase())) {
+                        mH+=`<div class="result-metric"><div class="result-metric__label">${m.label}</div><div class="result-metric__value">${m.value}</div></div>`;
+                    }
+                });
+            }
+            
             const c=document.createElement('div'); c.className='result-card'; c.setAttribute('data-accent',r.accent);
-            c.innerHTML=`<div class="result-card__header"><div class="result-card__icon">${r.icon}</div><div><div class="result-card__type">${r.type}</div><div class="result-card__name">${r.name}</div></div></div>
+            c.innerHTML=`<div class="result-card__header">
+                    <div class="result-card__icon">${r.icon}</div>
+                    <div><div class="result-card__name">${r.name}</div></div>
+                </div>
                 <div class="result-card__accuracy">${r.accuracy}</div><div class="result-card__accuracy-label">Accuracy</div>
-                <div class="result-card__metrics">${mH}</div><div class="status-badge">${r.statusText}</div>`;
+                <div class="result-card__metrics">${mH}</div>`;
             resultsGrid.appendChild(c);
         });
     }
@@ -431,7 +354,6 @@
 
     function renderCharts(data) {
         const R = data.results;
-        const A = data.analytics;
         const names = R.map(r=>r.name);
         const accents = R.map(r=>COLORS[r.accent]||'#888');
 
@@ -475,182 +397,6 @@
                 </div>`;
             cmGrid.appendChild(p);
         });
-
-        // 4. Anomalies Detected per model (bar)
-        const anomCounts = R.map(r => {
-            const parts = r.metrics.find(m=>m.label==='Anomalies');
-            return parts ? parseInt(parts.value.split('/')[0]) : 0;
-        });
-        const totalCounts = R.map(r => {
-            const parts = r.metrics.find(m=>m.label==='Anomalies');
-            return parts ? parseInt(parts.value.split('/')[1]) : 0;
-        });
-        makeChart('chart-anomaly-dist', {
-            type:'bar',
-            data:{
-                labels:names,
-                datasets:[
-                    { label:'Anomalies', data:anomCounts, backgroundColor:accents.map(c=>c+'AA'), borderRadius:6, borderColor:accents, borderWidth:1 },
-                    { label:'Normal', data:totalCounts.map((t,i)=>t-anomCounts[i]), backgroundColor:'rgba(224,213,199,0.3)', borderRadius:6 },
-                ]
-            },
-            options:{ responsive:true, plugins:{legend:{position:'top',labels:{boxWidth:12}}}, scales:{x:{stacked:true},y:{stacked:true}} }
-        });
-
-        // 5. Class Balance (doughnut)
-        if(A.class_distribution) {
-            const cd = A.class_distribution;
-            makeChart('chart-class-balance', {
-                type:'doughnut',
-                data:{
-                    labels:['Normal ('+cd.normal+')','Anomaly ('+cd.anomaly+')'],
-                    datasets:[{ data:[cd.normal,cd.anomaly], backgroundColor:['rgba(45,106,79,0.7)','rgba(208,0,0,0.7)'], borderColor:['#2D6A4F','#D00000'], borderWidth:2, hoverOffset:8 }]
-                },
-                options:{ responsive:true, plugins:{legend:{position:'bottom',labels:{padding:16,boxWidth:12}},title:{display:true,text:`Anomaly Rate: ${cd.anomaly_rate}%`,font:{size:13},color:'#1A1A1A'}} }
-            });
-        }
-
-        // 6. Sensor Stats Table
-        if(A.sensor_stats) {
-            const st = document.getElementById('stats-table');
-            let th='<thead><tr><th>Sensor</th><th>Min</th><th>Q1</th><th>Median</th><th>Mean</th><th>Q3</th><th>Max</th><th>Std Dev</th></tr></thead><tbody>';
-            for(const[col,s] of Object.entries(A.sensor_stats)) {
-                th+=`<tr><td style="color:var(--primary);font-weight:600;">${col}</td><td>${s.min}</td><td>${s.q1}</td><td>${s.median}</td><td>${s.mean}</td><td>${s.q3}</td><td>${s.max}</td><td>${s.std}</td></tr>`;
-            }
-            th+='</tbody>'; st.innerHTML=th;
-        }
-
-        // 7. Temperature & Humidity timeline
-        if(A.sensor_timelines) {
-            const tl = A.sensor_timelines;
-            const len = tl.Temperature ? tl.Temperature.length : 0;
-            const lbls = Array.from({length:len},(_,i)=>i);
-            const datasets = [];
-            if(tl.Temperature) datasets.push({label:'Temperature',data:tl.Temperature,borderColor:'#E85D04',backgroundColor:'rgba(232,93,4,0.06)',fill:true,pointRadius:0,borderWidth:1.5,tension:0.3});
-            if(tl.Humidity) datasets.push({label:'Humidity',data:tl.Humidity,borderColor:'#9D4EDD',backgroundColor:'rgba(157,78,221,0.06)',fill:true,pointRadius:0,borderWidth:1.5,tension:0.3});
-            makeChart('chart-temp-humid',{
-                type:'line', data:{labels:lbls,datasets},
-                options:{responsive:true,plugins:{legend:{position:'top',labels:{boxWidth:12}}},scales:{x:{display:false},y:{grid:{color:'rgba(0,0,0,0.04)'}}},interaction:{intersect:false,mode:'index'}}
-            });
-
-            // CO2 & Light timeline
-            const ds2 = [];
-            if(tl.CO2) ds2.push({label:'CO2',data:tl.CO2,borderColor:'#2D6A4F',backgroundColor:'rgba(45,106,79,0.06)',fill:true,pointRadius:0,borderWidth:1.5,tension:0.3,yAxisID:'y'});
-            if(tl.Light) ds2.push({label:'Light',data:tl.Light,borderColor:'#0EA5E9',backgroundColor:'rgba(14,165,233,0.06)',fill:true,pointRadius:0,borderWidth:1.5,tension:0.3,yAxisID:'y1'});
-            makeChart('chart-co2-light',{
-                type:'line', data:{labels:lbls,datasets:ds2},
-                options:{responsive:true,plugins:{legend:{position:'top',labels:{boxWidth:12}}},scales:{x:{display:false},y:{position:'left',grid:{color:'rgba(0,0,0,0.04)'}},y1:{position:'right',grid:{drawOnChartArea:false}}},interaction:{intersect:false,mode:'index'}}
-            });
-        }
-
-        // 8. Sensor Histograms (grouped bar)
-        if(A.histograms) {
-            const hists = A.histograms;
-            const cols = Object.keys(hists);
-            // Use Temperature histogram bins as reference
-            const refCol = cols[0];
-            const binLabels = hists[refCol].edges.slice(0,-1).map((e,i)=>`${e.toFixed(0)}`);
-            const hColors = ['#E85D04','#9D4EDD','#0EA5E9','#2D6A4F','#D00000'];
-            const hDatasets = cols.map((col,ci)=>({
-                label:col, data:hists[col].counts, backgroundColor:hColors[ci%hColors.length]+'88',
-                borderColor:hColors[ci%hColors.length], borderWidth:1, borderRadius:2, barPercentage:0.9
-            }));
-            makeChart('chart-histograms',{
-                type:'bar', data:{labels:binLabels,datasets:hDatasets},
-                options:{responsive:true,plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:10}}}},scales:{x:{display:false},y:{grid:{color:'rgba(0,0,0,0.04)'}}}}
-            });
-        }
-
-        // 9. Correlation Heatmap (scatter-based approximation with colors)
-        if(A.correlation) {
-            const corr = A.correlation;
-            const n = corr.labels.length;
-            const ctx = document.getElementById('chart-correlation').getContext('2d');
-            const cellW = 260/n;
-            const canvas = document.getElementById('chart-correlation');
-            canvas.width = 320; canvas.height = 280;
-
-            // Draw custom heatmap
-            const ox = 70, oy = 30;
-            const cw = (canvas.width - ox - 20) / n;
-            const ch = (canvas.height - oy - 40) / n;
-
-            ctx.clearRect(0,0,canvas.width,canvas.height);
-            ctx.font = '10px Space Grotesk'; ctx.textAlign = 'center';
-
-            // Column labels
-            corr.labels.forEach((l,i) => {
-                ctx.fillStyle = '#6B6B6B';
-                ctx.save(); ctx.translate(ox + i*cw + cw/2, canvas.height - 5);
-                ctx.fillText(l.substring(0,6), 0, 0);
-                ctx.restore();
-            });
-            // Row labels
-            ctx.textAlign = 'right';
-            corr.labels.forEach((l,i) => {
-                ctx.fillStyle = '#6B6B6B';
-                ctx.fillText(l.substring(0,8), ox-6, oy + i*ch + ch/2 + 4);
-            });
-
-            // Cells
-            for(let i=0; i<n; i++) {
-                for(let j=0; j<n; j++) {
-                    const v = corr.matrix[i][j];
-                    const r = Math.round(v > 0 ? 52+v*200 : 239);
-                    const g = Math.round(v > 0 ? 211 : 68+Math.abs(v)*80);
-                    const b = Math.round(v > 0 ? 153+v*100 : 68);
-                    const a = Math.max(0.2, Math.abs(v));
-                    ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
-                    ctx.fillRect(ox + j*cw + 1, oy + i*ch + 1, cw-2, ch-2);
-
-                    ctx.fillStyle = Math.abs(v) > 0.5 ? '#1A1A1A' : '#6B6B6B';
-                    ctx.textAlign = 'center';
-                    ctx.font = '11px JetBrains Mono';
-                    ctx.fillText(v.toFixed(2), ox + j*cw + cw/2, oy + i*ch + ch/2 + 4);
-                }
-            }
-        }
-
-        // 10. Prediction Timeline
-        if(R[0].predictions) {
-            const len = R[0].predictions.length;
-            const lbls = Array.from({length:len},(_,i)=>i);
-            const pds = R.map(r => ({
-                label:r.name, data:r.predictions.map((v,i)=>v===1?R.indexOf(r)+1:null),
-                borderColor:COLORS[r.accent], backgroundColor:COLORS[r.accent]+'44',
-                pointRadius:1.5, pointBackgroundColor:COLORS[r.accent],
-                showLine:false, yAxisID:'y'
-            }));
-            if(A.ground_truth) {
-                pds.unshift({
-                    label:'Ground Truth', data:A.ground_truth.map(v=>v===1?0:null),
-                    borderColor:'#D00000', backgroundColor:'rgba(208,0,0,0.3)',
-                    pointRadius:1.5, showLine:false, yAxisID:'y'
-                });
-            }
-            makeChart('chart-predictions',{
-                type:'scatter', data:{datasets:pds.map(d=>({...d,data:d.data.map((v,i)=>v!==null?{x:i,y:v}:null).filter(Boolean)}))},
-                options:{responsive:true,plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:10}}}},
-                    scales:{
-                        x:{title:{display:true,text:'Sample Index',color:'#6B6B6B'},grid:{color:'rgba(0,0,0,0.04)'}},
-                        y:{title:{display:true,text:'Model',color:'#6B6B6B'},ticks:{callback:function(v){const m=['Ground Truth','SVM','Quantum','LSTM','GDN'];return m[v]||'';}},grid:{color:'rgba(0,0,0,0.04)'},min:-0.5,max:4.5}
-                    }
-                }
-            });
-        }
-
-        // 11. GDN Anomaly Scores
-        const gdn = R.find(r=>r.name.includes('GDN'));
-        if(gdn && gdn.anomaly_scores) {
-            document.getElementById('gdn-scores-panel').style.display='block';
-            const scores = gdn.anomaly_scores;
-            const lbls = Array.from({length:scores.length},(_,i)=>i);
-            makeChart('chart-gdn-scores',{
-                type:'line',
-                data:{labels:lbls,datasets:[{label:'Anomaly Score',data:scores,borderColor:'#2D6A4F',backgroundColor:'rgba(45,106,79,0.08)',fill:true,pointRadius:0,borderWidth:1.5,tension:0.2}]},
-                options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{display:false},y:{title:{display:true,text:'Deviation Score',color:'#6B6B6B'},grid:{color:'rgba(0,0,0,0.04)'}}}}
-            });
-        }
     }
 })();
 </script>
