@@ -33,7 +33,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SENSOR_COLS = ["Temperature", "Humidity", "Light", "CO2", "HumidityRatio"]
+# UPDATED: Restricted to only 2 features
+SENSOR_COLS = ["Temperature", "Humidity"]
 LABEL_COL = "Occupancy"
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -199,7 +200,8 @@ def run_svm_model(df: pd.DataFrame):
 def run_quantum_model(df: pd.DataFrame):
     start = time.time()
     has_label = LABEL_COL in df.columns
-    X = df[["Temperature", "Humidity"]].values.astype(float)
+    # UPDATED: Standardized to use SENSOR_COLS
+    X = df[SENSOR_COLS].values.astype(float)
     scaler = MinMaxScaler(feature_range=(0, np.pi))
 
     if has_label:
@@ -273,93 +275,179 @@ def run_quantum_model(df: pd.DataFrame):
 def run_lstm_model(df: pd.DataFrame):
     start = time.time()
     has_label = LABEL_COL in df.columns
-    X = df[["Temperature", "Humidity"]].values.astype(float)
-    scaler = MinMaxScaler()
-    
+    merged_data = df[SENSOR_COLS + ([LABEL_COL] if has_label else [])].values.astype(float)
+
     try:
         import tensorflow as tf
-        from tensorflow.keras.layers import Input, LSTM, Dense, RepeatVector, TimeDistributed, LayerNormalization
+        from tensorflow.keras.layers import (
+            Input, LSTM, Dense, RepeatVector, TimeDistributed, LayerNormalization
+        )
         from tensorflow.keras.models import Model
+        from sklearn.metrics import f1_score
         tf.get_logger().setLevel('ERROR')
 
+        scaler = MinMaxScaler()
         WINDOW = 5
-        def create_sequences(data, window):
-            X_seq = []
-            for i in range(len(data) - window):
-                X_seq.append(data[i : i + window])
-            return np.array(X_seq)
 
-        X_scaled = scaler.fit_transform(X)
-        X_seq = create_sequences(X_scaled, WINDOW)
+        def create_sequences(data, window):
+            X = []
+            for i in range(len(data) - window):
+                X.append(data[i : i + window])
+            return np.array(X)
+
+        # Retaining script's hardcoded splits (149 & 162) if the CSV is large enough
+        train_end = 149 if len(merged_data) > 162 else max(int(len(merged_data)*0.6), WINDOW+1)
+        val_end = 162 if len(merged_data) > 162 else min(train_end + WINDOW + 5, len(merged_data) - WINDOW - 1)
+
+        train = pd.DataFrame(merged_data[:train_end, :2], columns=['Temperature', 'Humidity'])
 
         if has_label:
-            y = df[LABEL_COL].values.astype(int)
-            normal_mask = y == 0
-            X_normal = X[normal_mask]
-            X_train_scaled = scaler.fit_transform(X_normal)
-            X_train_seq = create_sequences(X_train_scaled, WINDOW)
+            test_full = pd.DataFrame(merged_data[val_end:, :], columns=['Temperature', 'Humidity', 'Occupancy'])
+            test = test_full[['Temperature', 'Humidity']].copy()
+            y_test = test_full['Occupancy'].astype(int).values
+            
+            val_full = pd.DataFrame(merged_data[train_end:val_end,:],columns=['Temperature', 'Humidity', 'Occupancy'])
+            val = val_full[['Temperature', 'Humidity']].copy()
+            y_val = val_full['Occupancy'].astype(int).values
         else:
-            y = np.zeros(len(X))
-            X_train_seq = X_seq
+            test = pd.DataFrame(merged_data[val_end:, :2], columns=['Temperature', 'Humidity'])
+            val = pd.DataFrame(merged_data[train_end:val_end,:2], columns=['Temperature', 'Humidity'])
+            y_test = np.zeros(len(test), dtype=int)
+            y_val = np.zeros(len(val), dtype=int)
 
-        # Autoencoder architecture
-        inputs = Input(shape=(X_train_seq.shape[1], X_train_seq.shape[2]))
-        L1 = LSTM(16, return_sequences=True)(inputs)
-        L2 = LayerNormalization()(L1)
-        L3 = LSTM(4, return_sequences=False)(L2)
-        L4 = RepeatVector(X_train_seq.shape[1])(L3)
-        L5 = LSTM(16, return_sequences=True)(L4)
-        L6 = LayerNormalization()(L5)
-        output = TimeDistributed(Dense(X_train_seq.shape[2]))(L6)
+        X_train = create_sequences(scaler.fit_transform(train.values), WINDOW)
+        X_test = create_sequences(scaler.transform(test.values), WINDOW)
+        X_val = create_sequences(scaler.transform(val.values), WINDOW)
 
-        model = Model(inputs=inputs, outputs=output)
+        def autoencoder_model(X):
+            inputs = Input(shape=(X.shape[1], X.shape[2]))
+            L1 = LSTM(32, return_sequences=True)(inputs)
+            L1 = LayerNormalization()(L1)
+            L2 = LSTM(16, return_sequences=True)(L1)
+            L2 = LayerNormalization()(L2)
+            L3 = LSTM(4, return_sequences=False)(L2)
+            L4 = RepeatVector(X.shape[1])(L3)
+            L5 = LSTM(16, return_sequences=True)(L4)
+            L5 = LayerNormalization()(L5)
+            L6 = LSTM(32, return_sequences=True)(L5)
+            output = TimeDistributed(Dense(X.shape[2]))(L6)
+
+            model = Model(inputs=inputs, outputs=output)
+            return model
+
+        model = autoencoder_model(X_train)
         model.compile(optimizer='adam', loss='mae')
 
-        # Fast training setup
-        model.fit(X_train_seq, X_train_seq, epochs=5, batch_size=32, verbose=0)
+        nb_epochs = 50
+        batch_size = 10
+        history = model.fit(X_train, X_train, epochs=nb_epochs, batch_size=batch_size,
+                            validation_split=0.05, verbose=0).history
 
-        # Reconstruction Error
-        preds = model.predict(X_seq, verbose=0)
-        mae = np.mean(np.abs(preds - X_seq), axis=(1, 2))
+        X_pred = model.predict(X_test, verbose=0)
+        error_vectors = np.abs(X_pred - X_test)
+        error_vectors = error_vectors.reshape(error_vectors.shape[0], -1)
 
-        # Dynamic Thresholding (e.g. 90th percentile)
-        threshold = np.percentile(mae, 90)
-        y_pred_seq = (mae > threshold).astype(int)
+        X_pred_train = model.predict(X_train, verbose=0)
+        error_train = np.abs(X_pred_train - X_train)
+        error_train = error_train.reshape(error_train.shape[0], -1)
+        
+        mu = np.mean(error_train, axis=0)
+        sigma = np.cov(error_train, rowvar=False)
+        sigma += 1e-6 * np.eye(sigma.shape[0])
 
-        y_pred_all = np.zeros(len(X), dtype=int)
-        y_pred_all[WINDOW:] = y_pred_seq
+        inv_sigma = np.linalg.inv(sigma)
+        
+        scores = []
+        for e in error_vectors:
+            diff = e - mu
+            score = diff.T @ inv_sigma @ diff
+            scores.append(score)
+        scores = np.array(scores)
+
+        X_val_pred = model.predict(X_val, verbose=0)
+        error_val = np.abs(X_val_pred - X_val)
+        error_val = error_val.reshape(error_val.shape[0], -1)
+
+        val_scores = []
+        for e in error_val:
+            diff = e - mu
+            score = diff.T @ inv_sigma @ diff
+            val_scores.append(score)
+        val_scores = np.array(val_scores)
+
+        window_size = WINDOW
+        y_val_window = []
+        for i in range(len(y_val) - window_size ):
+            window = y_val[i:i+window_size]
+            label = 1 if np.any(window == 1) else 0
+            y_val_window.append(label)
+        y_val_window = np.array(y_val_window)
+
+        best_f1 = 0
+        best_threshold = 0
+        for t in np.linspace(min(val_scores), max(val_scores), 100):
+            y_pred_val_temp = (val_scores > t).astype(int)
+            f1 = f1_score(y_val_window, y_pred_val_temp, zero_division=0)
+            if f1 > best_f1:
+                best_f1 = f1
+                best_threshold = t
+
+        threshold = best_threshold
+
+        y_test_window = []
+        for i in range(len(y_test) - window_size ):
+            window = y_test[i:i+window_size]
+            label = 1 if np.any(window == 1) else 0
+            y_test_window.append(label)
+        y_test_window = np.array(y_test_window)
+
+        scored = pd.DataFrame()
+        scored['AnomalyScore'] = scores
+        scored['Threshold'] = threshold
+        scored['Anomaly'] = scored['AnomalyScore'] > threshold
+        y_test_aligned = y_test_window
+        scored['Actual Anomaly'] = y_test_aligned.astype(bool)
+
+        y_pred = scored['Anomaly'].astype(int).values
 
         if has_label:
-            y_true = y[WINDOW:]
-            m = compute_metrics(y_true, y_pred_seq)
-            cm = compute_confusion(y_true, y_pred_seq)
+            y_true = y_test_aligned
+            m = compute_metrics(y_true, y_pred)
+            cm = compute_confusion(y_true, y_pred)
         else:
             m = {"accuracy": None, "precision": None, "recall": None, "f1": None}
             cm = None
 
-        anom = int(y_pred_seq.sum())
-        total = len(y_pred_seq)
-        status_txt = f"TF/Keras Autoencoder (window={WINDOW})"
+        anom = int(y_pred.sum())
+        total = len(y_pred)
+
+        # Aligning the windowed predictions back to original timeline length
+        y_pred_all = np.zeros(len(merged_data), dtype=int)
+        offset = val_end + WINDOW
+        y_pred_all[offset: offset + len(y_pred)] = y_pred
+
+        status_txt = f"LSTM-AE · threshold={threshold:.1f} (val F1={best_f1*100:.1f}%)"
 
     except ImportError:
-        # Fallback if TensorFlow isn't installed
         print("TensorFlow not found. Using IsolationForest fallback.")
-        X_scaled = scaler.fit_transform(X)
+        scaler = MinMaxScaler()
+        X_feat = df[SENSOR_COLS].values.astype(float)
+        X_scaled = scaler.fit_transform(X_feat)
+        from sklearn.ensemble import IsolationForest
         iso = IsolationForest(n_estimators=100, contamination=0.1, random_state=42)
         iso.fit(X_scaled)
-        iso_pred = iso.predict(X_scaled)
-        y_pred_all = np.where(iso_pred == -1, 1, 0)
-        
+        y_pred_all = np.where(iso.predict(X_scaled) == -1, 1, 0)
+
         if has_label:
-            y = df[LABEL_COL].values.astype(int)
-            m = compute_metrics(y, y_pred_all)
+            y  = df[LABEL_COL].values.astype(int)
+            m  = compute_metrics(y, y_pred_all)
             cm = compute_confusion(y, y_pred_all)
         else:
-            m = {"accuracy": None, "precision": None, "recall": None, "f1": None}
+            m  = {"accuracy": None, "precision": None, "recall": None, "f1": None}
             cm = None
-            
-        anom = int(y_pred_all.sum())
-        total = len(y_pred_all)
+
+        anom       = int(y_pred_all.sum())
+        total      = len(y_pred_all)
         status_txt = "Fallback: IsolationForest"
 
     elapsed = round(time.time() - start, 2)
@@ -377,12 +465,12 @@ def run_lstm_model(df: pd.DataFrame):
         "confusion": cm,
         "predictions": downsample_timeline(y_pred_all.astype(int)),
         "metrics": [
-            {"label": "Precision", "value": f"{m['precision']}%" if m["precision"] is not None else "—"},
-            {"label": "Recall", "value": f"{m['recall']}%" if m["recall"] is not None else "—"},
-            {"label": "F1-Score", "value": f"{m['f1']}%" if m["f1"] is not None else "—"},
-            {"label": "Anomalies", "value": f"{anom}/{total}"},
-            {"label": "Architecture", "value": "Seq2Seq"},
-            {"label": "Time", "value": f"{elapsed}s"},
+            {"label": "Precision",    "value": f"{m['precision']}%" if m["precision"] is not None else "—"},
+            {"label": "Recall",       "value": f"{m['recall']}%"    if m["recall"]    is not None else "—"},
+            {"label": "F1-Score",     "value": f"{m['f1']}%"        if m["f1"]        is not None else "—"},
+            {"label": "Anomalies",    "value": f"{anom}/{total}"},
+            {"label": "Architecture", "value": "LSTM 32→16→4 + Mahalanobis"},
+            {"label": "Time",         "value": f"{elapsed}s"},
         ],
         "statusText": status_txt,
     }
@@ -451,6 +539,7 @@ def run_gnn_model(df: pd.DataFrame):
                                     normalize=True, mu=mu, sigma=sigma)
         loader = DataLoader(dataset, batch_size=cfg["batch_size"], shuffle=False)
 
+        # Automatically adapts n_sensors to len(SENSOR_COLS) which is now 2
         model = GDN(n_sensors=len(SENSOR_COLS), window_size=cfg["window_size"],
                      embed_dim=cfg["embed_dim"], hidden_dim=cfg["hidden_dim"],
                      top_k=cfg["top_k"], dynamic_graph=cfg["dynamic_graph"])
