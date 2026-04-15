@@ -285,7 +285,9 @@ def run_lstm_model(df: pd.DataFrame):
         from tensorflow.keras.models import Model
         from sklearn.metrics import f1_score
         tf.get_logger().setLevel('ERROR')
-
+        from numpy.random import seed
+        seed(10)
+        tf.random.set_seed(10)
         scaler = MinMaxScaler()
         WINDOW = 5
 
