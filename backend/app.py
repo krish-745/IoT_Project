@@ -195,7 +195,7 @@ def run_svm_model(df: pd.DataFrame):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  MODEL 2: Quantum Kernel SVM (Updated to match IoT_Quantum.ipynb)
+#  MODEL 2: Quantum Kernel SVM
 # ═══════════════════════════════════════════════════════════════════════
 def run_quantum_model(df: pd.DataFrame):
     start = time.time()
@@ -223,7 +223,7 @@ def run_quantum_model(df: pd.DataFrame):
             "statusText": "PennyLane library missing.",
         }
 
-    # ── Kept small for speed (matched from notebook) ────────────────────────
+    # ── Kept small for speed ────────────────────────
     SEED = 42
     N_QUBITS    = 2
     N_LAYERS    = 2
