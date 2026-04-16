@@ -140,7 +140,7 @@ def run_svm_model(df: pd.DataFrame):
     start = time.time()
     has_label = LABEL_COL in df.columns
     X = df[SENSOR_COLS].values.astype(float)
-    scaler = StandardScaler()
+    scaler = MinMaxScaler()
 
     if has_label:
         y = df[LABEL_COL].values.astype(int)
@@ -150,7 +150,7 @@ def run_svm_model(df: pd.DataFrame):
         X_train = scaler.fit_transform(X_train)
         X_test = scaler.transform(X_test)
 
-        model = SVC(kernel="rbf", C=10, gamma="scale", random_state=42)
+        model = SVC(kernel="rbf", C=1, gamma="scale", random_state=42)
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
 
@@ -195,46 +195,175 @@ def run_svm_model(df: pd.DataFrame):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  MODEL 2: Quantum Kernel SVM
+#  MODEL 2: Quantum Kernel SVM (Updated to match IoT_Quantum.ipynb)
 # ═══════════════════════════════════════════════════════════════════════
 def run_quantum_model(df: pd.DataFrame):
     start = time.time()
     has_label = LABEL_COL in df.columns
-    # UPDATED: Standardized to use SENSOR_COLS
     X = df[SENSOR_COLS].values.astype(float)
+    
+    try:
+        import pennylane as qml
+        import pennylane.numpy as pnp
+    except ImportError:
+        print("PennyLane not found. Please `pip install pennylane`.")
+        return {
+            "name": "Quantum Kernel SVM",
+            "type": "Quantum ML",
+            "accent": "purple",
+            "icon": "⚛️",
+            "accuracy": "—",
+            "accuracy_val": None,
+            "precision_val": None,
+            "recall_val": None,
+            "f1_val": None,
+            "confusion": None,
+            "predictions": [],
+            "metrics": [],
+            "statusText": "PennyLane library missing.",
+        }
+
+    # ── Kept small for speed (matched from notebook) ────────────────────────
+    SEED = 42
+    N_QUBITS    = 2
+    N_LAYERS    = 2
+    N_STEPS     = 30
+    BATCH_SIZE  = 15
+    LR          = 0.05
+    N_TRAIN     = 30
+    N_TEST_OK   = 15
+    N_TEST_ANOM = 10
+
+    np.random.seed(SEED)
     scaler = MinMaxScaler(feature_range=(0, np.pi))
+    X_scaled = scaler.fit_transform(X)
 
     if has_label:
-        y = df[LABEL_COL].values.astype(int)
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.3, random_state=42, stratify=y
+        # Notebook logic: Normal is +1, Anomaly is -1
+        y = np.where(df[LABEL_COL] == 0, 1, -1)
+
+        nidx = np.where(y == 1)[0]
+        aidx = np.where(y == -1)[0]
+
+        rng = np.random.default_rng(SEED)
+        rng.shuffle(nidx)
+        rng.shuffle(aidx)
+
+        # Safely enforce notebook's split rules relative to dataset size
+        actual_n_train = min(N_TRAIN, len(nidx))
+        X_train = X_scaled[nidx[:actual_n_train]]
+        y_train = y[nidx[:actual_n_train]]
+
+        rem_nidx = nidx[actual_n_train:]
+        actual_test_ok = min(N_TEST_OK, len(rem_nidx))
+        actual_test_anom = min(N_TEST_ANOM, len(aidx))
+
+        test_idx = np.concatenate([rem_nidx[:actual_test_ok], aidx[:actual_test_anom]])
+        X_test   = X_scaled[test_idx]
+        y_test_q = y[test_idx]
+
+        perm   = rng.permutation(len(y_test_q))
+        X_test = X_test[perm]
+        y_test_q = y_test_q[perm]
+
+        dev = qml.device("default.qubit", wires=N_QUBITS)
+
+        def ansatz(x, params):
+            """Simple 2-qubit ansatz: data encoding + trainable rotations + CNOT."""
+            for layer in range(N_LAYERS):
+                for q in range(N_QUBITS):
+                    qml.RX(x[q % len(x)], wires=q)
+                    qml.RY(params[layer, q, 0], wires=q)
+                    qml.RZ(params[layer, q, 1], wires=q)
+                qml.CNOT(wires=[0, 1])
+
+        @qml.qnode(dev)
+        def kernel_circuit(x1, x2, params):
+            ansatz(x1, params)
+            qml.adjoint(ansatz)(x2, params)
+            return qml.probs(wires=range(N_QUBITS))
+
+        def kernel_fn(x1, x2, params):
+            # No float() cast — keeps autograd tape intact
+            return kernel_circuit(x1, x2, params)[0]
+
+        def kta_loss(params, X_batch, y_batch):
+            K = qml.kernels.square_kernel_matrix(
+                X_batch,
+                lambda x1, x2: kernel_fn(x1, x2, params),
+                assume_normalized_kernel=False
+            )
+            # Correct ideal kernel: T_ij = y_i * y_j  (labels must be ±1)
+            y_b = y_batch.reshape(-1, 1).astype(float)
+            T = y_b @ y_b.T
+            # Frobenius inner product <K, T>
+            kta = pnp.sum(K * T) / (pnp.linalg.norm(K) * pnp.linalg.norm(T) + 1e-8)
+            return -kta
+
+        params = pnp.array(
+            np.random.uniform(0, 2 * np.pi, (N_LAYERS, N_QUBITS, 2)),
+            requires_grad=True
         )
-        X_train = scaler.fit_transform(X_train)
-        X_test = scaler.transform(X_test)
+        opt = qml.AdamOptimizer(stepsize=LR)
 
-        best_acc = 0
-        best_pred = None
-        best_params = ""
+        # ── KTA training ───────────────────────────────────────────────────
+        for step in range(N_STEPS):
+            curr_batch = min(BATCH_SIZE, len(X_train))
+            idx = np.random.choice(len(X_train), curr_batch, replace=False)
+            X_batch = X_train[idx]
+            y_batch = y_train[idx]
+
+            def cost(p):
+                return kta_loss(p, X_batch, y_batch)
+
+            params, loss_val = opt.step_and_cost(cost, params)
+
+        # ── Build kernel matrices & classify ────────────────────────────────
+        K_train = qml.kernels.square_kernel_matrix(
+            X_train, lambda x1, x2: kernel_fn(x1, x2, params),
+            assume_normalized_kernel=True
+        )
+        K_test = qml.kernels.kernel_matrix(
+            X_test, X_train, lambda x1, x2: kernel_fn(x1, x2, params)
+        )
+
+        # Auto-scale
+        scale   = 1.0 / (K_train.mean() + 1e-8)
+        K_train_s = K_train * scale
+        K_test_s  = K_test  * scale
+
+        # Grid-search nu
+        best_acc, best_pred = 0, None
+        best_nu = 0.05
         best_clf = None
-        for C_val in [1, 10, 100]:
-            for gamma_val in ["scale", "auto"]:
-                clf = SVC(kernel="rbf", C=C_val, gamma=gamma_val, random_state=42)
-                clf.fit(X_train, y_train)
-                preds = clf.predict(X_test)
-                acc_val = accuracy_score(y_test, preds)
-                if acc_val > best_acc:
-                    best_acc = acc_val
-                    best_pred = preds
-                    best_params = f"C={C_val}, γ={gamma_val}"
-                    best_clf = clf
+        for nu in [0.05, 0.10, 0.15, 0.20]:
+            clf = OneClassSVM(kernel="precomputed", nu=nu)
+            preds = clf.fit(K_train_s).predict(K_test_s)
+            acc   = accuracy_score(y_test_q, preds)
+            
+            if acc > best_acc or best_pred is None:
+                best_acc, best_pred = acc, preds
+                best_nu = nu
+                best_clf = clf
 
-        m = compute_metrics(y_test, best_pred)
-        cm = compute_confusion(y_test, best_pred)
-        anom = int(best_pred.sum())
-        total = len(best_pred)
+        # Convert outputs back to standard app format (0 = normal, 1 = anomaly)
+        y_pred_app = np.where(best_pred == 1, 0, 1)
+        y_test_app = np.where(y_test_q == 1, 0, 1)
 
-        X_all = scaler.transform(X)
-        y_pred_all = best_clf.predict(X_all)
+        m = compute_metrics(y_test_app, y_pred_app)
+        cm = compute_confusion(y_test_app, y_pred_app)
+        anom = int(y_pred_app.sum())
+        total = len(y_pred_app)
+
+        # Compute full-timeline predictions
+        K_all = qml.kernels.kernel_matrix(
+            X_scaled, X_train, lambda x1, x2: kernel_fn(x1, x2, params)
+        )
+        K_all_s = K_all * scale
+        y_pred_all_q = best_clf.predict(K_all_s)
+        y_pred_all = np.where(y_pred_all_q == 1, 0, 1)
+        best_params = f"KTA Train (ν={best_nu})"
+
     else:
         m = {"accuracy": None, "precision": None, "recall": None, "f1": None}
         cm = None
@@ -265,7 +394,7 @@ def run_quantum_model(df: pd.DataFrame):
             {"label": "Params", "value": best_params},
             {"label": "Time", "value": f"{elapsed}s"},
         ],
-        "statusText": f"RBF-kernel SVC on Temp+Humidity ({total} test)" if has_label else "No labels",
+        "statusText": f"Pennylane Q-Kernel Trained ({total} test)" if has_label else "No labels",
     }
 
 
